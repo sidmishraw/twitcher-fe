@@ -33,11 +33,11 @@
  * @author Sidharth Mishra
  * @description Twitcher app
  * @created Sat Mar 24 2018 22:04:02 GMT-0700 (PDT)
- * @last-modified Sun Mar 25 2018 22:54:00 GMT-0700 (PDT)
+ * @last-modified Tue Mar 27 2018 00:37:16 GMT-0700 (PDT)
  */
 
 import React from "react";
-import { StyleSheet, FlatList, View, Text, WebView } from "react-native";
+import { StyleSheet, FlatList, View, Text, WebView, Dimensions } from "react-native";
 import { TwitchCard } from "./TwitchCard";
 import { SearchBar, Button } from "react-native-elements";
 import Icon from "react-native-vector-icons/FontAwesome";
@@ -192,7 +192,17 @@ export class Twitcher extends React.Component {
    * @memberof Twitcher
    */
   fetchNextPage(info) {
-    if (this.state.streams.length > 5) {
+    if (this.fetchingNextPage) {
+      //   this.onEndReachedCalledDuringMomentum = true;
+      return;
+    }
+    if (
+      //   !this.onEndReachedCalledDuringMomentum &&
+      this.state.streams.length > 5 &&
+      !this.fetchingNextPage
+    ) {
+      this.fetchingNextPage = true; // flag indicating that the fetching has begun
+
       fetch(
         `http://${localIP}:${localPort}/getLiveCreators?searchString=${encodeURIComponent(
           this.state.searchString
@@ -208,15 +218,24 @@ export class Twitcher extends React.Component {
         .then(res => res.json())
         .then(body => {
           const streams = body;
+          if (streams.length < 1) {
+            // do nothing since there are no records in the incoming response
+            console.log(`No results found.`);
+            return;
+          }
           const newState = Object.assign({}, this.state); // clone
           newState.streams = streams;
           newState.refreshing = false;
           newState.resultsPageNbr = this.state.resultsPageNbr + 1; // udpate the pgNbr
           this.setState(newState);
-          if (this.flRef) this.flRef.scrollToOffset({ offset: 0, animated: true }); // scroll to top
+          if (this.flRef) this.flRef.scrollToOffset({ x: 0, y: 0, animated: false }); // scroll to top
+          //   this.onEndReachedCalledDuringMomentum = true;
+          this.fetchingNextPage = false; // flag updated to indicate that the fetching is done
         })
         .catch(err => {
           console.log(`Error = ${err}`);
+          //   this.onEndReachedCalledDuringMomentum = true;
+          this.fetchingNextPage = false; // flag updated to indicate that the fetching is done
         });
     }
   }
@@ -226,10 +245,13 @@ export class Twitcher extends React.Component {
    * @memberof Twitcher
    */
   fetchPrevPage() {
-    if (this.state.resultsPageNbr > 1) {
+    if (this.fetchingPrevPage) return;
+    if (this.state.resultsPageNbr > 1 && !this.fetchingPrevPage) {
       const newState = Object.assign({}, this.state); // clone
       newState.refreshing = true;
       this.setState(newState);
+
+      this.fetchingPrevPage = true; // flag indicates that it is fetching the prev records
 
       fetch(
         `http://${localIP}:${localPort}/getLiveCreators?searchString=${encodeURIComponent(
@@ -251,10 +273,12 @@ export class Twitcher extends React.Component {
           newState.refreshing = false;
           newState.resultsPageNbr = this.state.resultsPageNbr - 1;
           this.setState(newState);
-          if (this.flRef) this.flRef.scrollToOffset({ offset: 0, animated: true }); // scroll to top
+          if (this.flRef) this.flRef.scrollToOffset({ x: 0, y: 0, animated: false }); // scroll to top
+          this.fetchingPrevPage = false; // flag indicates that fetching is complete
         })
         .catch(err => {
           console.log(`Error = ${err}`);
+          this.fetchingPrevPage = false; // flag indicates that fetching is complete
         });
     }
   }
@@ -275,8 +299,10 @@ export class Twitcher extends React.Component {
             ref={ref => {
               this.flRef = ref;
             }} // set flatlist ref inside this.flRef
-            extraData={this.state.streams}
+            //#region props for controlling flatlist's re-rendering
+            // extraData={this.state.streams}
             // initialScrollIndex={0}
+            //#endregion props for controlling flatlist's re-rendering
             style={styles.resultSet}
             data={this.state.streams}
             keyExtractor={stream => {
@@ -295,10 +321,14 @@ export class Twitcher extends React.Component {
                 />
               );
             }}
-            onEndReachedThreshold={1}
+            onEndReachedThreshold={0}
             onEndReached={this.fetchNextPage.bind(this)}
             refreshing={this.state.refreshing}
             onRefresh={this.fetchPrevPage.bind(this)}
+            // momentum -- still buggy and not clear from docs
+            // onMomentumScrollBegin={() => {
+            //   this.onEndReachedCalledDuringMomentum = false;
+            // }}
           />
         );
 
@@ -316,24 +346,67 @@ export class Twitcher extends React.Component {
             <Text style={styles.logo}>Twitcher</Text>
             <SearchBar
               showLoading={true}
-              placeholder={"Search active streams..."}
+              placeholder={
+                this.state.searchString.length === 0
+                  ? "Search active streams..."
+                  : this.state.searchString
+              }
               onChangeText={this.updateSearchString.bind(this)}
               onSubmitEditing={this.searchStreams.bind(this)}
             />
-            {this.state.streams.length > 0 ? results : noStreams}
+            {this.state.streams.length > 0 ? results : results}
           </View>
         );
       }
 
       case WATCH_STREAM_MODE: {
+        console.log(`window = ${JSON.stringify(Dimensions.get("window"))}`);
+        console.log(`screen = ${JSON.stringify(Dimensions.get("screen"))}`);
+
         //
-        // Embed the video?
+        // Embed the live stream video, chat, everything!
+        // src :: https://dev.twitch.tv/docs/embed/
         //
         return (
-          <View style={{ flex: 1 }}>
+          <View style={{ flex: 1, backgroundColor: "#000000" }}>
             <WebView
-              source={{ uri: this.state.streamURI }}
-              style={{ marginTop: 20, flex: 2 }}
+              source={{
+                html: `<html>
+                        <body>
+                            <!-- Add a placeholder for the Twitch embed -->
+                            <div id="twitch-embed"></div>
+                        
+                            <!-- Load the Twitch embed script -->
+                            <script src="https://embed.twitch.tv/embed/v1.js"></script>
+                        
+                            <!-- Create a Twitch.Embed object that will render within the "twitch-embed" root element. -->
+                            <script type="text/javascript">
+                                // alert(\`${this.state.streamURI.split("/").pop()}\`)
+                                // alert(\`${Dimensions.get("window").width}\`);
+                                // alert(\`${Dimensions.get("window").height}\`);
+                                
+                                new Twitch.Embed("twitch-embed", {
+                                    width: "100%", /* \`${
+                                      Dimensions.get("window").width
+                                    }\`,*/
+                                    height: "100%", /* \`${
+                                      Dimensions.get("window").height
+                                    }\`, */
+                                    channel: "${this.state.streamURI.split("/").pop()}",
+                                    theme: "dark"
+                                });
+
+                                embed.addEventListener(Twitch.Embed.VIDEO_READY, () => {
+                                    var player = embed.getPlayer();
+                                    player.play();
+                                });
+                            </script>
+                        </body>
+                </html>`
+              }} // {{ uri: this.state.streamURI }} // the URI was getting Twitch header, the embedding is a better approach
+              style={{ marginTop: 20, flex: 2, backgroundColor: "#000000" }}
+              allowsInlineMediaPlayback={true}
+              mediaPlaybackRequiresUserAction={false}
             />
             <Button
               backgroundColor="#03A9F4"

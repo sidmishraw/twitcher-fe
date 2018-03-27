@@ -33,7 +33,7 @@
  * @author Sidharth Mishra
  * @description Twitcher's card component
  * @created Sat Mar 24 2018 22:08:41 GMT-0700 (PDT)
- * @last-modified Sun Mar 25 2018 22:54:02 GMT-0700 (PDT)
+ * @last-modified Mon Mar 26 2018 23:37:16 GMT-0700 (PDT)
  */
 
 import React from "react";
@@ -63,13 +63,12 @@ const styles = StyleSheet.create({
  *
  * @export
  * @class TwitchCard
- * @extends {React.Component}
+ * @extends {React.PureComponent}
  */
-export class TwitchCard extends React.Component {
+export class TwitchCard extends React.PureComponent {
   constructor(props, context) {
     super(props, context);
     this.props = props;
-
     // console.log(`Card details = ${JSON.stringify(this.props, null, 4)}`);
   }
 
